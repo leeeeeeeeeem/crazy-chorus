@@ -4,18 +4,16 @@ pub struct DelayLine {
 }
 
 impl DelayLine {
-    /// Creates a delay line able to read up to `max_delay_samples` in the past.
-    /// The only place that allocates.
     pub fn new(max_delay_samples: usize) -> Self {
         DelayLine { 
-            buffer: Vec::with_capacity(max_delay_samples),
-            write_pos: 0
+            buffer: vec![0.0; max_delay_samples],
+            write_pos: 0,
         }
     }
 
-    /// Stores `x` at the write position and advances it, wrapping at the end.
     pub fn write(&mut self, x: f32) {
-        todo!()
+        self.buffer[self.write_pos] = x;
+        self.write_pos = (self.write_pos + 1) % self.buffer.len();
     }
 
     /// Returns the sample written `delay` samples ago.
