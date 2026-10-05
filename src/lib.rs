@@ -1,3 +1,5 @@
+mod dsp;
+
 use truce::prelude::*;
 use truce_gui_types::layout::{GridLayout, knob, widgets};
 
