@@ -1,8 +1,8 @@
 [vendor]
-name = "My Company"
-id = "com.mycompany"
-url = "https://example.com"
-au_manufacturer = "MCom"
+name = "Lem"
+id = "com.lem"
+url = "https://github.com/leeeeeeeeeem"
+au_manufacturer = "Leem"
 
 [[plugin]]
 name = "CrazyChorus"

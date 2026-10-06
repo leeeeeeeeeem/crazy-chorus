@@ -18,9 +18,10 @@ required-features = ["standalone"]
 # Each format feature gates the matching wrapper crate as an optional
 # dep.
 [features]
-default = ["clap", "vst3", "standalone"]
+default = ["clap", "vst3", "au", "standalone"]
 clap = ["dep:truce-clap", "dep:clap-sys"]
 vst3 = ["dep:truce-vst3"]
+au = ["dep:truce-au"]
 standalone = ["dep:truce-standalone"]
 shell = ["truce/shell"]
 # Flags any allocation your DSP makes on the audio thread in `process`.
@@ -37,6 +38,7 @@ truce-gui-types = { version = "6.3" }
 truce-gui = { version = "6.3" }
 truce-clap = { version = "6.3", optional = true }
 truce-vst3 = { version = "6.3", optional = true }
+truce-au = { version = "6.3", optional = true }
 truce-standalone = { version = "6.3", features = ["gui"], optional = true }
 clap-sys = { version = "0.5", optional = true }
 
