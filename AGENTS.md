@@ -203,9 +203,26 @@ Status: setters (`new`, `set_rate`, `set_sample_rate`, `set_phase`) implemented 
 
 ### Chorus (`src/dsp/chorus.rs`)
 
-Status: empty. `lib.rs` is still the scaffold (Gain param only).
+Status: skeleton (fields + `todo!()` methods, per-sample `process(left, right) -> (left, right)`). `lib.rs` is still
+the scaffold (Gain param only).
 
 - Owns the stereo LFO phase offset (see LFO `reset()` above).
+- **Bipolar modulation**: `delay = base + depth * lfo`, so `base` is the centre and the delay swings `base ± depth`.
+- **Maximums as `const`s**: base 25 ms, depth 5 ms. Delay lines are sized for 25 + 5 = 30 ms at the current sample
+  rate, converted with `ceil`. Param ranges and buffer sizing read the same consts so they cannot drift apart.
+- **Base > depth is guaranteed by the param ranges** (option "a"), not by clamping at runtime: base min 7 ms > depth
+  max 5 ms, so the shortest delay is 2 ms and the params stay independent. `read_frac`'s clamp to 1 sample is only a
+  safety net.
+- **Mix law: linear crossfade**, range 0-100%. Mix = 0 must stay bit-exact (choose the formula form that guarantees
+  it). 100% is allowed (pure wet = vibrato).
+- **Params (range, default)**: `rate` 0.1-5 Hz (consider a skewed/log range), default 0.8 Hz; `depth` 0-5 ms,
+  default 2 ms; `delay` 7-25 ms, default 15 ms; `mix` 0-100%, default 50%.
+- **Stereo offset**: `const` 0.25 cycles (90°), right LFO ahead of left. Becomes the `width` param later (see below).
+- **ms → samples in the setters**, not per sample (same pattern as `Lfo::phase_inc`). `process` only works in
+  samples; `set_sample_rate` must recompute the sample values.
+- **Setter guarding: same policy as `Lfo`**. Every setter clamps to its valid range NaN-safely (`max` then `min`)
+  with a `debug_assert!` against NaN, so `process` never sees a bad value.
+- **Still open**: smoothing time per param (decide when wiring params in `lib.rs`).
 - Open for later: when `width` becomes a param, changing the offset with `set_phase` mid-playback makes the right LFO
   jump. Consider one shared phase with the offset added at read time, or smoothing the offset.
 
