@@ -124,6 +124,9 @@ Default plan: develop on **AU v2** (simplest, no Developer ID needed). Revisit v
 - Allocate delay buffers in init/reset, sized from the sample rate. Re-size on sample-rate change.
 - Smooth every parameter that touches the delay path (truce supports `smooth = "exp(ms)"` on params) to avoid zipper noise and clicks.
 - Guard against NaN/denormals; clear all state in `reset()`.
+- **Assertions**: a panic inside a plugin aborts the host (Logic crashes). On the audio path use `debug_assert!`
+  plus a graceful release fallback (clamp, NaN → safe value). `assert!` only in setup code (`new`, sample-rate
+  changes), for cheap checks where continuing would be meaningless.
 
 ## DSP design
 
@@ -141,7 +144,7 @@ Reference implementation to read first: the chorus in https://github.com/truce-a
 
 ### Delay line (`src/dsp/delay_line.rs`), decisions made
 
-Status: integer `new` / `write` / `read` / `reset` implemented and tested. Next: fractional `read_frac`.
+Status: **done**. `new` / `write` / `read` / `read_frac` / `reset` implemented and tested.
 
 - **Read convention ("option A")**: `read(0)` is the most recent write; `read(d)` is the sample written `d` writes
   ago (`y[n] = x[n - d]`). Per-sample call order is write, then read.
@@ -155,14 +158,56 @@ Status: integer `new` / `write` / `read` / `reset` implemented and tested. Next:
 - **Index math**: `write_pos.wrapping_sub(1 + delay) & mask`. `wrapping_sub` avoids the `usize` underflow panic in
   debug builds; the power-of-two mask makes the wrapped value land on the correct slot.
 - **Two different limits**: the integer `read` is bounded by capacity (`delay <= mask`, checked with
-  `debug_assert!`, no release clamp). The public promise is `max_delay_samples`; the future `read_frac` must clamp its
-  input to `[1.0, max_delay_samples]` (lower bound 1.0 because Hermite also reads tap `d - 1`).
-- **`read_frac` plan**: split `D` into `d = floor(D)` and `frac`, read taps `d-1, d, d+1, d+2`, interpolate. It builds
-  on `read(usize)`; the integer signature stays as is.
+  `debug_assert!`, no release clamp). The public promise is `max_delay_samples`; `read_frac` clamps its input to
+  `[1.0, max_delay_samples]` (lower bound 1.0 because Hermite also reads tap `d - 1`).
+- **`read_frac`**: `debug_assert!` against NaN, clamp, split `D` into `d = floor(D)` and `frac`, read taps
+  `d-1, d, d+1, d+2` via `read(usize)`, 4-point cubic Hermite in Horner form. The integer signature stays as is.
+  Out-of-range input (including `inf`) clamps to the nearest bound.
 - **`reset`** zero-fills the buffer and leaves `write_pos` alone (reads are relative to it). No allocation.
 - **`new` allocates**, so call it only from init/reset on sample-rate change, never from `process()`.
 - **Tests**: impulse after delay, correctness across wraparound (ramp), reset clears history, and `max_delay`
-  readable (including `max + 1` / `max + 2` headroom, for sizes around power-of-two boundaries).
+  readable (including `max + 1` / `max + 2` headroom, for sizes around power-of-two boundaries). `read_frac`: DC input
+  stays constant, integer delays match `read`, ramp interpolates exactly across wraparound, out-of-range clamps.
+
+### LFO (`src/dsp/lfo.rs`), decisions made
+
+Status: setters (`new`, `set_rate`, `set_sample_rate`, `set_phase`) implemented and tested. Next: `next()` and
+`reset()` (still `todo!()`).
+
+- **Fields**: `phase`, `phase_inc`, `sample_rate`. The rate in Hz is not stored; `set_sample_rate` recovers it as
+  `sample_rate * phase_inc` (tiny float round-trip error accepted).
+- **Phase in cycles**, `[0, 1)`, not radians. Stereo offset is a fraction of a cycle (0.25 = 90°).
+- **`phase_inc = rate_hz / sample_rate`**, computed once in the setter so `next()` only adds and wraps.
+- **Single guard**: `set_sample_rate` stores the new rate, then goes through `set_rate`, so every write to
+  `phase_inc` is bounded in one place.
+- **Bounds `phase_inc` to `[0, 0.5]`** (0 Hz to Nyquist). This is a safety range protecting `next()`'s invariant, not
+  the musical range; the musical range (~0.1-5 Hz) belongs on the `rate` param. Negative rates clamp to 0 (no
+  reverse LFO).
+- **NaN handling**: `.max(0.0).min(0.5)`, not `clamp`, because `clamp` passes NaN through while `max`/`min` return
+  the non-NaN argument. `max` first, so NaN → 0.0 (LFO stops) rather than 0.5. `debug_assert!` catches NaN in tests.
+  Do not let clippy's `manual_clamp` turn this back into `clamp`.
+- **`set_phase`** wraps with `rem_euclid(1.0)` (`fract` would leave negatives negative). It can return exactly `1.0`
+  for tiny negative inputs, so `next()` must treat phase 1.0 the same as 0.0.
+- **`next()` contract**: returns the value at the current phase in `[-1, 1]`, then advances. Given
+  `phase <= 1` and `phase_inc <= 0.5`, a single "if >= 1, subtract 1" wrap is enough.
+- **`f32` phase accumulator** is accepted: at very low rates the per-step rounding gives ~1% rate error, inaudible
+  for an LFO. Tests compare periods with a tolerance.
+- **Waveform: sine** (`sin(2π · phase)`). Chosen for the classic smooth chorus: pitch deviation follows the slope of
+  the delay time, and a sine's slope changes smoothly (a triangle would give a constant pitch offset that flips
+  abruptly at the peaks). Phase 1.0 and 0.0 give the same value, so the `rem_euclid` edge case is harmless.
+- **`reset()` sets phase to 0** and leaves `phase_inc` / `sample_rate` alone. `Lfo` knows nothing about stereo: the
+  L/R offset is owned by `Chorus`, whose `reset()` must reset both LFOs and then re-apply the offset with `set_phase`
+  on the right one, or the stereo width collapses after every transport stop.
+- **Tests**: `set_rate` math, clamping to 0 / Nyquist / `inf`, NaN → 0 (release only, `cargo test --release`),
+  sample-rate change keeps the rate in Hz and the Nyquist bound, `set_phase` wraps.
+
+### Chorus (`src/dsp/chorus.rs`)
+
+Status: empty. `lib.rs` is still the scaffold (Gain param only).
+
+- Owns the stereo LFO phase offset (see LFO `reset()` above).
+- Open for later: when `width` becomes a param, changing the offset with `set_phase` mid-playback makes the right LFO
+  jump. Consider one shared phase with the offset added at read time, or smoothing the offset.
 
 ## Testing plan
 
