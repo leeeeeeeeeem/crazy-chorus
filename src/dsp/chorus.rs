@@ -1,9 +1,9 @@
 use super::delay_line::DelayLine;
 use super::lfo::Lfo;
 
-const MIN_DELAY_MS: f32 = 7.0;
-const MAX_DELAY_MS: f32 = 25.0;
-const MAX_DEPTH_MS: f32 = 5.0;
+pub(crate) const MIN_DELAY_MS: f32 = 7.0;
+pub(crate) const MAX_DELAY_MS: f32 = 25.0;
+pub(crate) const MAX_DEPTH_MS: f32 = 5.0;
 const STEREO_OFFSET: f32 = 0.25;
 
 const DEFAULT_RATE: f32 = 0.8;

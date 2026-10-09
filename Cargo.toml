@@ -50,3 +50,6 @@ clap-sys = { version = "0.5", optional = true }
 # DSP perf parity.
 [profile.shell]
 inherits = "release"
+
+[dev-dependencies]
+truce-test = "6.3"

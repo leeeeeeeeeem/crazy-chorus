@@ -356,6 +356,7 @@ dependencies = [
  "truce-gui",
  "truce-gui-types",
  "truce-standalone",
+ "truce-test",
  "truce-vst3",
 ]
 
@@ -1946,6 +1947,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "truce-driver"
+version = "6.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "287cea223de80f9d60e517ab38c38023467b0793e55369a405100db7f9923b0a"
+dependencies = [
+ "truce-core",
+ "truce-params",
+]
+
+[[package]]
 name = "truce-font"
 version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2084,6 +2095,21 @@ dependencies = [
  "truce-utils",
  "windows-sys 0.61.2",
  "x11-dl",
+]
+
+[[package]]
+name = "truce-test"
+version = "6.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2fc1838d1d86839729728a1abce9e87d314b1725575592aaf80ff1d06d609f"
+dependencies = [
+ "png",
+ "toml",
+ "truce-build",
+ "truce-core",
+ "truce-driver",
+ "truce-params",
+ "truce-plugin",
 ]
 
 [[package]]

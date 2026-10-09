@@ -17,4 +17,4 @@ au_tag = "Effects"
 # "Reverb", "Surround", "Analyzer", "Spatial". Leave as "Tools" for
 # generic utilities. Without this, Cubase buckets the plugin under
 # "Other".
-vst3_subcategory = "Tools"
+vst3_subcategory = "Modulation"

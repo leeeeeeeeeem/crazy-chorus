@@ -206,7 +206,7 @@ Status: **done**. `new` / `set_rate` / `set_sample_rate` / `set_phase` / `next` 
 
 Status: **done** (DSP side). `new` / `set_sample_rate` / `set_rate` / `set_delay_ms` / `set_depth_ms` / `set_mix` /
 `reset` / per-sample `process(left, right) -> (left, right)` implemented and tested (debug and `--release`).
-Next: wire `Chorus` into `lib.rs`, which is still the scaffold (Gain param only).
+Wired into `lib.rs` (see "Plugin integration" below).
 
 - Owns the stereo LFO phase offset (see LFO `reset()` above).
 - **Bipolar modulation**: `delay = base + depth * lfo`, so `base` is the centre and the delay swings `base ± depth`.
@@ -247,10 +247,35 @@ Next: wire `Chorus` into `lib.rs`, which is still the scaffold (Gain param only)
   (`to_bits`, incl. `-0.0`), mix 0 keeps state running, pure wet with depth 0 is a plain delay (44.1/48/96 kHz),
   mix 0.5 averages, stereo offset makes channels differ, depth changes the output, jumping/out-of-range params stay
   finite and within ±1.5 (Hermite overshoot), `reset` silences the tail, NaN params keep output finite (release).
-- **Still open**: smoothing time per param (decide when wiring params in `lib.rs`). Check whether truce's
-  exponential smoothing ever reaches exactly 0.0 for `mix`; if not, the bit-exact mix-0 path never triggers.
+- Range consts (`MIN_DELAY_MS`, `MAX_DELAY_MS`, `MAX_DEPTH_MS`) are `pub(crate)` so `lib.rs` can use them.
 - Open for later: when `width` becomes a param, changing the offset with `set_phase` mid-playback makes the right LFO
   jump. Consider one shared phase with the offset added at read time, or smoothing the offset.
+
+### Plugin integration (`src/lib.rs`), decisions made
+
+Status: **done**. auval passes (`aufx CCho Leem`). pluginval and
+clap-validator are not installed on this machine yet.
+
+- **Params**: `rate` `log(0.1, 5)` Hz, default 0.8, `smooth = "log(20)"`; `depth` `linear(0, 5)` ms, default 2,
+  `exp(50)`; `delay` `linear(7, 25)` ms, default 15, `exp(50)`; `mix` `linear(0, 1)` with unit `%` (stored 0-1,
+  displayed 0-100%, so no conversion), default 0.5, **`linear(20)`**. Ranges are string literals in the attribute;
+  `tests::param_ranges_match_dsp_consts` keeps them equal to the DSP consts.
+- **Mix smoothing must stay linear**: truce's linear smoother lands exactly on its target, exponential only
+  approaches it, so with `exp` the bit-exact mix-0 path never triggers
+  (`mix_ramped_to_zero_becomes_bit_exact_passthrough` fails with `exp`; verified).
+- **State**: `CrazyChorus { chorus, sample_rate }` with a manual `Default` building `Chorus` at a 48 kHz placeholder
+  (truce requires `DspState: Default` and `init` has no sample rate). `reset` sets the real rate
+  (`set_sample_rate`, re-allocates) and calls `Chorus::reset`.
+- **`process`**: `buffer.for_each_frame_io::<2, 2, _>`; per sample, `read()` every param once, call the setters,
+  then `Chorus::process`. `for_each_frame_io` repeats the last input channel for a mono input.
+- **Bus layouts**: stereo -> stereo and mono -> stereo (the user chose this; no mono -> mono).
+- **`tail()`**: `ceil(sample_rate * 30 ms)` samples. Latency 0 (default).
+- **Editor**: built-in `GridLayout` with four knobs. `truce.toml` `vst3_subcategory = "Modulation"`.
+- **Tests** (`tests/plugin.rs`, `truce-test` dev-dependency): truce static checks (info, AU codes, bus config,
+  params, state round-trip / corrupt / empty state), silence, impulse at 10 ms at 44.1/48/96 kHz, output identical
+  bit-for-bit across block sizes 1/64/512/4096 with mid-run automation, mix ramp to 0 becomes bit-exact,
+  extreme automation finite and below 1.5, tail silent after 31 ms, reported tail, mono -> stereo equals duplicated
+  stereo input and still has width, and `process_is_realtime_clean` (only with `--features rt-paranoid`).
 
 ## Testing plan
 
