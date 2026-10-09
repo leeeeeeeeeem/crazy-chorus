@@ -171,8 +171,7 @@ Status: **done**. `new` / `write` / `read` / `read_frac` / `reset` implemented a
 
 ### LFO (`src/dsp/lfo.rs`), decisions made
 
-Status: setters (`new`, `set_rate`, `set_sample_rate`, `set_phase`) implemented and tested. Next: `next()` and
-`reset()` (still `todo!()`).
+Status: **done**. `new` / `set_rate` / `set_sample_rate` / `set_phase` / `next` / `reset` implemented and tested.
 
 - **Fields**: `phase`, `phase_inc`, `sample_rate`. The rate in Hz is not stored; `set_sample_rate` recovers it as
   `sample_rate * phase_inc` (tiny float round-trip error accepted).
@@ -199,12 +198,15 @@ Status: setters (`new`, `set_rate`, `set_sample_rate`, `set_phase`) implemented 
   L/R offset is owned by `Chorus`, whose `reset()` must reset both LFOs and then re-apply the offset with `set_phase`
   on the right one, or the stereo width collapses after every transport stop.
 - **Tests**: `set_rate` math, clamping to 0 / Nyquist / `inf`, NaN → 0 (release only, `cargo test --release`),
-  sample-rate change keeps the rate in Hz and the Nyquist bound, `set_phase` wraps.
+  sample-rate change keeps the rate in Hz and the Nyquist bound, `set_phase` wraps. `next`: value before advancing,
+  phase 1.0 behaves like 0.0, output and phase stay in range, period matches the rate (0.5% tolerance), rate 0 is
+  constant. `reset`: phase back to 0, rate kept.
 
-### Chorus (`src/dsp/chorus.rs`)
+### Chorus (`src/dsp/chorus.rs`), decisions made
 
-Status: skeleton (fields + `todo!()` methods, per-sample `process(left, right) -> (left, right)`). `lib.rs` is still
-the scaffold (Gain param only).
+Status: **done** (DSP side). `new` / `set_sample_rate` / `set_rate` / `set_delay_ms` / `set_depth_ms` / `set_mix` /
+`reset` / per-sample `process(left, right) -> (left, right)` implemented and tested (debug and `--release`).
+Next: wire `Chorus` into `lib.rs`, which is still the scaffold (Gain param only).
 
 - Owns the stereo LFO phase offset (see LFO `reset()` above).
 - **Bipolar modulation**: `delay = base + depth * lfo`, so `base` is the centre and the delay swings `base ± depth`.
@@ -213,16 +215,40 @@ the scaffold (Gain param only).
 - **Base > depth is guaranteed by the param ranges** (option "a"), not by clamping at runtime: base min 7 ms > depth
   max 5 ms, so the shortest delay is 2 ms and the params stay independent. `read_frac`'s clamp to 1 sample is only a
   safety net.
-- **Mix law: linear crossfade**, range 0-100%. Mix = 0 must stay bit-exact (choose the formula form that guarantees
-  it). 100% is allowed (pure wet = vibrato).
+- **Mix law: linear crossfade**, `dry * (1 - mix) + wet * mix` (exact at mix = 1, unlike `dry + mix * (wet - dry)`).
+  100% is allowed (pure wet = vibrato). `Chorus` takes mix as **0-1**; `lib.rs` converts from the 0-100% param.
+- **Mix = 0 is bit-exact via an early return of the inputs**, because no formula is: `-0.0 + 0.0` gives `+0.0`, and
+  `0 * inf` gives NaN. The branch comes **after** the state updates: delay lines are written and both LFOs advance
+  every sample even at mix 0, so raising the mix later gives no stale audio or modulation jump.
+- **`process` order per sample**: `next()` on both LFOs (exactly once each), delay per channel
+  `delay_samples + depth_samples * lfo`, `write` the dry input, `read_frac(delay)`, mix. No clamp on the delay
+  (param ranges keep it in 2-30 ms; `read_frac` clamps as a safety net). No guard against NaN input from the host
+  (without feedback a NaN leaves after one delay); revisit when adding `feedback`.
 - **Params (range, default)**: `rate` 0.1-5 Hz (consider a skewed/log range), default 0.8 Hz; `depth` 0-5 ms,
   default 2 ms; `delay` 7-25 ms, default 15 ms; `mix` 0-100%, default 50%.
 - **Stereo offset**: `const` 0.25 cycles (90°), right LFO ahead of left. Becomes the `width` param later (see below).
 - **ms → samples in the setters**, not per sample (same pattern as `Lfo::phase_inc`). `process` only works in
-  samples; `set_sample_rate` must recompute the sample values.
+  samples. Fields keep both: `delay_ms` / `depth_ms` (to recompute) and `delay_samples` / `depth_samples`.
+- **Two conversions**: `ms_to_samples` returns an exact `f32` for params (no rounding, so smoothed params glide
+  instead of stepping a whole sample at a time, which would zipper). `max_delay_samples(sample_rate)` rounds up
+  (`ceil` → `usize`) and is used only for delay-line capacity.
+- **`set_sample_rate`**: asserts the rate, stores it **first**, re-creates both delay lines, forwards the rate to
+  both LFOs, then calls `set_delay_ms(self.delay_ms)` / `set_depth_ms(self.depth_ms)` so conversion and clamping
+  live only in the setters.
+- **`new`** builds the struct, calls `set_rate(DEFAULT_RATE)` (`Lfo::new` starts at 0 Hz), then `reset()` (which
+  applies the stereo offset). Defaults are `const`s.
 - **Setter guarding: same policy as `Lfo`**. Every setter clamps to its valid range NaN-safely (`max` then `min`)
-  with a `debug_assert!` against NaN, so `process` never sees a bad value.
-- **Still open**: smoothing time per param (decide when wiring params in `lib.rs`).
+  with a `debug_assert!` against NaN, so `process` never sees a bad value. NaN falls back to the lower bound:
+  delay 7 ms, depth 0, mix 0 (dry). Clippy's `manual_clamp` flags this; do not let `clippy --fix` turn it into
+  `clamp`.
+- **Tests**: setters convert and clamp (incl. ±`inf`), NaN → lower bound (release only), `new` sizes delay lines
+  for 30 ms and applies the stereo offset and default rate, `reset` clears lines and restores the offset,
+  `set_sample_rate` resizes and keeps delay/depth in ms. `process`: silence in → silence out, mix 0 bit-exact
+  (`to_bits`, incl. `-0.0`), mix 0 keeps state running, pure wet with depth 0 is a plain delay (44.1/48/96 kHz),
+  mix 0.5 averages, stereo offset makes channels differ, depth changes the output, jumping/out-of-range params stay
+  finite and within ±1.5 (Hermite overshoot), `reset` silences the tail, NaN params keep output finite (release).
+- **Still open**: smoothing time per param (decide when wiring params in `lib.rs`). Check whether truce's
+  exponential smoothing ever reaches exactly 0.0 for `mix`; if not, the bit-exact mix-0 path never triggers.
 - Open for later: when `width` becomes a param, changing the offset with `set_phase` mid-playback makes the right LFO
   jump. Consider one shared phase with the offset added at read time, or smoothing the offset.
 
