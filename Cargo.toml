@@ -56,3 +56,10 @@ truce-test = "6.3"
 [build-dependencies]
 # Compiles `ui/main.slint` and bundles truce's widget library + JetBrains Mono.
 truce-slint-build = "6.3"
+
+# Patched truce-slint: keeps a knob drag alive when the cursor leaves the
+# editor window (upstream cancels it on `CursorLeft`). Changes are marked
+# "crazy-chorus patch" in vendor/truce-slint/src/editor.rs. Remove this once
+# upstream handles it; re-apply after upgrading truce.
+[patch.crates-io]
+truce-slint = { path = "vendor/truce-slint" }

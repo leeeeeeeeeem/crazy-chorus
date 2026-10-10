@@ -130,7 +130,9 @@ component ChorusKnob inherits Rectangle {
                     self.start-value = root.value;
                     self.pixels-per-range = ev.modifiers.shift ? 1000 : 200;
                     root.begin-edit();
-                } else if ev.kind == PointerEventKind.up {
+                } else if ev.kind == PointerEventKind.up || ev.kind == PointerEventKind.cancel {
+                    // `cancel` (drag aborted by the system) must also close the
+                    // host gesture, or the param stays "being edited".
                     root.end-edit();
                 }
             }
@@ -187,19 +189,22 @@ export component ChorusUi inherits Window {
         height: 48px;
         background: Mocha.mantle;
 
-        Text {
+        HorizontalLayout {
             x: 22px;
-            text: "CrazyChorus";
-            font-size: 20px;
-            font-weight: 700;
-            color: Mocha.peach;
-            vertical-alignment: center;
+            alignment: start;
+            Text {
+                text: "Crazy";
+                font-size: 20px;
+                color: Mocha.text;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "Chorus";
+                font-size: 20px;
+                color: Mocha.peach;
+                vertical-alignment: center;
+            }
         }
-    }
-    Rectangle {
-        y: 48px;
-        height: 1px;
-        background: Mocha.surface0;
     }
 
     HorizontalLayout {

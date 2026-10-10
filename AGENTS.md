@@ -328,8 +328,8 @@ Status: **done (v1)**, written by the agent at the user's request. Renders headl
   out-of-process AU host is untested risk; per-instance browser cost).
 - **Look**: minimal and modern, Catppuccin Mocha (https://catppuccin.com/palette) with **peach** (`#fab387`) accents;
   colours live in the `Mocha` global in `ui/main.slint`. Font: **Inter Bold**, bundled in `ui/fonts/` (SIL OFL,
-  license file next to it; Slint's software renderer can't rely on system fonts). Header: "CrazyChorus" in peach,
-  20px, no vendor name. Fixed size **440 x 190** (`EDITOR_SIZE`, `.resizable(false)`; AU v2 editors can't be resized
+  license file next to it; Slint's software renderer can't rely on system fonts). Header: "Crazy" in Mocha `text`
+  + "Chorus" in peach, 20px, no vendor name, no divider line. Fixed size **440 x 190** (`EDITOR_SIZE`, `.resizable(false)`; AU v2 editors can't be resized
   by the host).
 - **Own knob** (`ChorusKnob`), not truce's `Knob`: flat design, 270° arc, peach value arc, flat disc with a pointer
   line; drag vertically
@@ -341,6 +341,11 @@ Status: **done (v1)**, written by the agent at the user's request. Renders headl
 - **Sync**: the per-frame closure sets normalized values and readout strings from the host
   (`get_param` / `get_param_plain`), so automation and presets move the knobs. Readouts are formatted in Rust
   (`format_rate`: "0.80 Hz" below 1 Hz, else one decimal; ms with one decimal; mix as %).
+- **Vendored truce-slint patch** (`vendor/truce-slint`, wired via `[patch.crates-io]` in `Cargo.toml`): upstream
+  turns baseview's `CursorLeft` into Slint `PointerExited` even mid-drag, which cancels the knob drag at the window
+  edge. The patch defers the exit while a mouse button is held (AppKit keeps sending `mouseDragged` outside the
+  view) and delivers it after release. Changes are marked `crazy-chorus patch` in `src/editor.rs`. Re-apply or drop
+  it when upgrading truce; worth reporting upstream. The knob also ends its edit gesture on `PointerEventKind.cancel`.
 - Web (HTML/React) UI remains possible later through a custom `Editor` + `wry`; prototype one knob inside Logic first.
 
 ## Open questions (ask the user, do not guess)
