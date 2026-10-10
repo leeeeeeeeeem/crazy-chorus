@@ -99,6 +99,18 @@ If the user explicitly asks for code ("write the tests for me", "implement X"), 
 - Identifiers live in `truce.toml`: `[vendor] au_manufacturer` (4 chars), `[[plugin]] fourcc`, `au3_subtype`, `au_tag = "Effects"`.
 - Keep `au3_subtype` **different** from `fourcc` if v2 and v3 are both installed. Logic is strict about component ID collisions.
 - Validate manually: `auval -v aufx <fourcc> <manufacturer>` (type `aufx` = effect).
+- **Stale host info**: cargo-truce 6.3 writes a fixed AU `version` (65536) into every build, so Logic cannot tell
+  builds apart and keeps cached capabilities (channel layouts, custom view) in
+  `~/Library/Preferences/com.apple.audio.AudioComponentCache.plist`. After changing bus layouts (or if Logic shows a
+  blank editor / wrong mono-stereo variants), quit Logic, run
+  `defaults delete com.apple.audio.AudioComponentCache "7-'aufx'-'CCho'-'Leem'-0x10000"`, then Plug-in Manager →
+  Reset & Rescan Selection, then **restart Logic** (it reads this info at launch). `cargo truce reset-au` does
+  **not** clear this entry.
+- **Tools started from a terminal don't see third-party AUs** on this machine (auval, `AVAudioUnit` test hosts, Logic
+  launched via its binary): only Apple's built-ins are listed. Apps started through LaunchServices (Dock, Finder,
+  `open`) see everything. Run test hosts as a `.app` via `open`; don't launch Logic's binary directly.
+- Logic on Apple Silicon hosts AU v2 plugins **out of process** (`AUHostingServiceXPC`); plugin stderr does not reach
+  Logic's stderr.
 
 | | AU v2 | AU v3 |
 |---|---|---|
