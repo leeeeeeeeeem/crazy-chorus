@@ -3,7 +3,7 @@
 A chorus audio effect (modulated delay lines) built in Rust with the **truce** framework.
 Primary target: **AU for Logic Pro**. Secondary: **VST3** (and CLAP, which truce scaffolds by default).
 
-Status: backend (DSP + params) first. GUI is deliberately deferred.
+Status: DSP, plugin integration and a Slint GUI (v1) are done. See "Future DSP work" for next ideas.
 
 <!-- Maintainer note: items marked (verify) came from docs I read in a chat, not from running code. Confirm them. -->
 
@@ -154,6 +154,28 @@ Initial params: `rate`, `depth`, `delay` (base), `mix`. Add `width` and `feedbac
 
 Reference implementation to read first: the chorus in https://github.com/truce-audio/reiss-mcpherson-effects (docs: https://truce.audio/docs/examples/reiss-chorus/).
 
+### Future DSP work (ideas, not started)
+
+Suggested order: width → feedback → high-pass → multiple voices. Each new building block goes in `src/dsp/` with its
+own tests, like the delay line and LFO.
+
+- **Width** (stereo LFO offset, 0-180°): replaces the fixed 90° `STEREO_OFFSET`. Changing it with `set_phase`
+  mid-playback makes the right LFO jump (click); use one shared phase with the offset added at read time, or smooth
+  the offset.
+- **LFO waveform** (sine / triangle): a triangle gives a constant pitch offset that flips at the peaks (see the LFO
+  waveform decision).
+- **Output / wet level** in dB: one multiply after the mix; dB → linear conversion plus smoothing. Related question:
+  linear vs equal-power (`cos`/`sin`) mix law. Linear is right for correlated signals and keeps mix 0 / 1 exact;
+  equal-power avoids the −3 dB dip at 50% for uncorrelated signals; a chorus is partly correlated (comb filtering).
+- **Feedback** (wet back into the delay line): must stay < 1 (mind Hermite overshoot), needs NaN protection (one NaN
+  would circulate forever) and denormal handling on the decaying tail; same-channel vs cross (L→R) feedback.
+- **High-pass on the wet path**: first filter (one-pole or biquad) with per-channel state; removes low-end mud; can sit
+  inside the feedback loop.
+- **Tempo-synced rate**: note lengths (1/4, 1/8, ...) → Hz from the host's BPM (`ProcessContext` transport).
+- **Multiple voices** (2-4 taps per channel with spread LFO phases): `Voice` struct / arrays of state, gain
+  normalisation as voices are added, CPU cost. The lush "ensemble" sound.
+- **Vintage / BBD character**: band-limiting, mild saturation, noise. Open-ended.
+
 ### Delay line (`src/dsp/delay_line.rs`), decisions made
 
 Status: **done**. `new` / `write` / `read` / `read_frac` / `reset` implemented and tested.
@@ -296,12 +318,27 @@ clap-validator are not installed on this machine yet.
 - `cargo truce validate` must pass (auval is what Logic enforces) before any manual DAW test.
 - Final check by hand: load the AU in Logic, automate a param, save/reload a project.
 
-## GUI (deferred, do not start yet)
+## GUI (Slint), decisions made
 
-- For now use truce's built-in `GridLayout` editor (knobs for the params) or none.
-- Later candidates: **Slint** (design in `.slint` markup) or **egui** (draw in code). Both go through truce's `editor()` and use `PluginContext` (`get_param`, `begin_edit` / `set_param` / `end_edit`, `automate`, `get_meter`).
-- A web (HTML/React) UI is not built into truce (it is on their roadmap). It would need the raw-window-handle path plus wry. Treat it as high risk, especially inside AU hosts.
-- Constraint: AU v2 editors cannot be resized by the host; design a fixed size unless using AU v3.
+Status: **done (v1)**, written by the agent at the user's request. Renders headlessly via `truce_test::screenshot!`.
+
+- **Toolkit: Slint** via `truce-slint` 6.3. `slint` is pinned to `=1.15.1` (must match truce-slint; the code
+  generated from `ui/main.slint` refers to the `slint` crate). `build.rs` calls `truce_slint_build::compile`.
+  Rejected: egui (tool-like look), iced (steeper), web/React (not built into truce; WKWebView inside Logic's
+  out-of-process AU host is untested risk; per-instance browser cost).
+- **Look**: minimal and modern, Catppuccin Mocha (https://catppuccin.com/palette) with **peach** (`#fab387`) accents;
+  colours live in the `Mocha` global in `ui/main.slint`. Font: bundled JetBrains Mono. Fixed size **360 x 156**
+  (`EDITOR_SIZE`, `.resizable(false)`; AU v2 editors can't be resized by the host).
+- **Own knob** (`ChorusKnob`), not truce's `Knob`: 270° arc, peach value arc, dot indicator; drag vertically
+  (Shift = fine), scroll to nudge, double-click resets to the param default.
+- **Edit gestures**: callbacks `begin-edit` / `edit` / `end-edit` / `reset` with a knob index; Rust maps the index via
+  `KNOBS` (order must match the `.slint` file) to `begin_edit` on press, `set_param` while dragging, `end_edit` on
+  release, so a drag is one automation gesture. truce-slint's `bind!` was avoided because it sends begin/set/end on
+  every mouse move.
+- **Sync**: the per-frame closure sets normalized values and readout strings from the host
+  (`get_param` / `get_param_plain`), so automation and presets move the knobs. Readouts are formatted in Rust
+  (`format_rate`: "0.80 Hz" below 1 Hz, else one decimal; ms with one decimal; mix as %).
+- Web (HTML/React) UI remains possible later through a custom `Editor` + `wry`; prototype one knob inside Logic first.
 
 ## Open questions (ask the user, do not guess)
 
@@ -317,5 +354,4 @@ clap-validator are not installed on this machine yet.
 - After the user changes DSP code, suggest running `cargo clippy` and `cargo test`; after identifier or format
   changes, suggest `cargo truce validate`. Run them yourself only to verify code you were asked to write.
 - Keep the "decisions made" sections of this file up to date when the user settles a design choice.
-- Do not touch GUI code until the backend tests pass and the user says to start.
 - Ask before changing the framework choice, AU identifiers, or signing setup.

@@ -2,7 +2,10 @@ mod dsp;
 
 use dsp::chorus::{Chorus, MAX_DELAY_MS, MAX_DEPTH_MS};
 use truce::prelude::*;
-use truce_gui_types::layout::{GridLayout, knob, widgets};
+use truce_slint::{PluginContext, SlintEditor};
+
+// Generated from `ui/main.slint` by `build.rs` (defines `ChorusUi`).
+slint::include_modules!();
 
 // Ranges must be literals in the attribute, so they duplicate the consts in
 // `dsp::chorus`. `tests::param_ranges_match_dsp_consts` keeps them in sync.
@@ -132,17 +135,80 @@ impl PluginLogic for CrazyChorus {
         (state.sample_rate * (MAX_DELAY_MS + MAX_DEPTH_MS) / 1000.0).ceil() as u32
     }
 
+    // Fixed size: AU v2 editors can't be resized by the host.
     fn editor(params: Arc<CrazyChorusParams>) -> Box<dyn Editor> {
-        truce_gui::default_editor(
-            params,
-            GridLayout::build(vec![widgets(vec![
-                knob(P::Rate, "Rate"),
-                knob(P::Depth, "Depth"),
-                knob(P::Delay, "Delay"),
-                knob(P::Mix, "Mix"),
-            ])]),
+        Box::new(
+            SlintEditor::new(params, EDITOR_SIZE, |ctx: PluginContext<CrazyChorusParams>| {
+                let ui = ChorusUi::new().expect("creating ChorusUi");
+                wire_knobs(&ui, &ctx);
+                // Runs every frame: mirror host-side changes (automation,
+                // presets) into the UI.
+                Box::new(move |ctx: &PluginContext<CrazyChorusParams>| {
+                    ui.set_rate(ctx.get_param(P::Rate));
+                    ui.set_depth(ctx.get_param(P::Depth));
+                    ui.set_delay(ctx.get_param(P::Delay));
+                    ui.set_mix(ctx.get_param(P::Mix));
+                    ui.set_rate_text(format_rate(ctx.get_param_plain(P::Rate)).into());
+                    ui.set_depth_text(format!("{:.1} ms", ctx.get_param_plain(P::Depth)).into());
+                    ui.set_delay_text(format!("{:.1} ms", ctx.get_param_plain(P::Delay)).into());
+                    ui.set_mix_text(format!("{:.0}%", ctx.get_param_plain(P::Mix) * 100.0).into());
+                })
+            })
+            .resizable(false),
         )
     }
+}
+
+/// Editor size in logical points; matches `ChorusUi`'s width/height.
+const EDITOR_SIZE: (u32, u32) = (360, 156);
+
+/// Knob index used by the Slint callbacks -> param. Order must match
+/// `ChorusUi` in `ui/main.slint`.
+const KNOBS: [P; 4] = [P::Rate, P::Depth, P::Delay, P::Mix];
+
+/// Connect the knob callbacks to host edit gestures. A drag is one gesture
+/// (`begin_edit` on press, `set_param` while moving, `end_edit` on release),
+/// so the host records it as a single automation pass. (truce-slint's
+/// `bind!` sends begin/set/end for every mouse move instead.)
+fn wire_knobs(ui: &ChorusUi, ctx: &PluginContext<CrazyChorusParams>) {
+    let params = ctx.params();
+    let defaults: [f64; 4] = [
+        &params.rate.info,
+        &params.depth.info,
+        &params.delay.info,
+        &params.mix.info,
+    ]
+    .map(|info| info.range.normalize(info.default_plain));
+
+    let c = ctx.clone();
+    ui.on_begin_edit(move |i| {
+        if let Some(&id) = KNOBS.get(i as usize) {
+            c.begin_edit(id);
+        }
+    });
+    let c = ctx.clone();
+    ui.on_edit(move |i, v| {
+        if let Some(&id) = KNOBS.get(i as usize) {
+            c.set_param(id, f64::from(v));
+        }
+    });
+    let c = ctx.clone();
+    ui.on_end_edit(move |i| {
+        if let Some(&id) = KNOBS.get(i as usize) {
+            c.end_edit(id);
+        }
+    });
+    let c = ctx.clone();
+    ui.on_reset(move |i| {
+        if let (Some(&id), Some(&default)) = (KNOBS.get(i as usize), defaults.get(i as usize)) {
+            c.automate(id, default);
+        }
+    });
+}
+
+/// "0.80 Hz" below 1 Hz, "2.5 Hz" above: slow rates need the extra digit.
+fn format_rate(hz: f32) -> String {
+    if hz < 1.0 { format!("{hz:.2} Hz") } else { format!("{hz:.1} Hz") }
 }
 
 truce::plugin! {

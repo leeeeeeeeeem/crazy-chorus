@@ -1,0 +1,259 @@
+// CrazyChorus editor. Catppuccin Mocha palette (https://catppuccin.com/palette)
+// with peach accents.
+//
+// Values are normalized 0-1; Rust formats the readouts and maps knob indices
+// to params (see `editor()` in src/lib.rs).
+
+import "JetBrainsMono-Regular.ttf";
+
+global Mocha {
+    out property <color> crust: #11111b;
+    out property <color> mantle: #181825;
+    out property <color> base: #1e1e2e;
+    out property <color> surface0: #313244;
+    out property <color> surface1: #45475a;
+    out property <color> overlay0: #6c7086;
+    out property <color> overlay1: #7f849c;
+    out property <color> text: #cdd6f4;
+    out property <color> peach: #fab387;
+}
+
+// Rotary knob: 270° arc, peach value arc, dot indicator.
+// Drag vertically (Shift = fine), scroll to nudge, double-click to reset.
+component ChorusKnob inherits Rectangle {
+    in-out property <float> value: 0.5;
+    in property <string> value-text;
+    in property <string> label;
+
+    callback begin-edit();
+    callback edit(float);
+    callback end-edit();
+    callback reset();
+
+    width: 64px;
+    height: 92px;
+
+    property <float> start-angle: 135;
+    property <float> value-angle: start-angle + clamp(value, 0, 1) * 270;
+    property <bool> active: touch.pressed || touch.has-hover;
+
+    // Dial geometry in a 52x52 viewbox: center (26,26), arc radius 22.
+    pure function ax(angle: float, r: float) -> float { 26 + r * cos(angle * 1deg) }
+    pure function ay(angle: float, r: float) -> float { 26 + r * sin(angle * 1deg) }
+
+    dial := Rectangle {
+        x: (parent.width - 52px) / 2;
+        y: 0px;
+        width: 52px;
+        height: 52px;
+
+        // Track
+        Path {
+            width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0; viewbox-width: 52; viewbox-height: 52;
+            stroke: root.active ? Mocha.surface1 : Mocha.surface0;
+            stroke-width: 4px;
+            MoveTo { x: ax(135, 22); y: ay(135, 22); }
+            ArcTo {
+                x: ax(405, 22); y: ay(405, 22);
+                radius-x: 22; radius-y: 22;
+                sweep: true; large-arc: true;
+            }
+        }
+
+        // Value arc
+        Path {
+            width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0; viewbox-width: 52; viewbox-height: 52;
+            stroke: Mocha.peach;
+            stroke-width: 4px;
+            visible: root.value > 0.002;
+            MoveTo { x: ax(135, 22); y: ay(135, 22); }
+            ArcTo {
+                x: ax(root.value-angle, 22); y: ay(root.value-angle, 22);
+                radius-x: 22; radius-y: 22;
+                sweep: true;
+                large-arc: root.value-angle - root.start-angle > 180;
+            }
+        }
+
+        // Cap
+        Rectangle {
+            x: 11px; y: 11px;
+            width: 30px; height: 30px;
+            border-radius: 15px;
+            background: Mocha.mantle;
+            border-width: 1px;
+            border-color: Mocha.surface0;
+        }
+
+        // Indicator dot
+        Rectangle {
+            x: (ax(root.value-angle, 10) - 2.5) * 1px;
+            y: (ay(root.value-angle, 10) - 2.5) * 1px;
+            width: 5px; height: 5px;
+            border-radius: 2.5px;
+            background: root.active ? Mocha.peach : Mocha.text;
+        }
+    }
+
+    Text {
+        y: 58px;
+        width: parent.width;
+        text: root.value-text;
+        font-size: 11px;
+        color: touch.pressed ? Mocha.peach : Mocha.text;
+        horizontal-alignment: center;
+    }
+
+    Text {
+        y: 75px;
+        width: parent.width;
+        text: root.label;
+        font-size: 9px;
+        letter-spacing: 1px;
+        color: Mocha.overlay1;
+        horizontal-alignment: center;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: 72px;
+        mouse-cursor: MouseCursor.ns-resize;
+        property <float> start-value;
+        property <float> pixels-per-range: 200;
+
+        pointer-event(ev) => {
+            if ev.button == PointerEventButton.left {
+                if ev.kind == PointerEventKind.down {
+                    self.start-value = root.value;
+                    self.pixels-per-range = ev.modifiers.shift ? 1000 : 200;
+                    root.begin-edit();
+                } else if ev.kind == PointerEventKind.up {
+                    root.end-edit();
+                }
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.value = clamp(
+                    self.start-value - (self.mouse-y - self.pressed-y) / 1px / self.pixels-per-range,
+                    0, 1);
+                root.edit(root.value);
+            }
+        }
+        double-clicked => {
+            root.reset();
+        }
+        scroll-event(ev) => {
+            if ev.delta-y == 0 {
+                return reject;
+            }
+            root.begin-edit();
+            root.value = clamp(root.value + (ev.delta-y > 0 ? 0.01 : -0.01), 0, 1);
+            root.edit(root.value);
+            root.end-edit();
+            accept
+        }
+    }
+}
+
+export component ChorusUi inherits Window {
+    // Knob order (must match `KNOBS` in src/lib.rs): 0 rate, 1 depth, 2 delay, 3 mix.
+    in-out property <float> rate;
+    in-out property <float> depth;
+    in-out property <float> delay;
+    in-out property <float> mix;
+    in property <string> rate-text;
+    in property <string> depth-text;
+    in property <string> delay-text;
+    in property <string> mix-text;
+
+    callback begin-edit(int);
+    callback edit(int, float);
+    callback end-edit(int);
+    callback reset(int);
+
+    width: 360px;
+    height: 156px;
+    background: Mocha.base;
+    default-font-family: "JetBrains Mono";
+
+    // Header
+    Rectangle {
+        y: 0px;
+        height: 34px;
+        background: Mocha.mantle;
+
+        Rectangle {
+            x: 16px;
+            width: 7px; height: 7px;
+            border-radius: 3.5px;
+            background: Mocha.peach;
+        }
+        Text {
+            x: 30px;
+            text: "crazy chorus";
+            font-size: 12px;
+            color: Mocha.text;
+            vertical-alignment: center;
+        }
+        Text {
+            x: parent.width - self.width - 16px;
+            text: "lem";
+            font-size: 10px;
+            color: Mocha.overlay0;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        y: 34px;
+        height: 1px;
+        background: Mocha.surface0;
+    }
+
+    HorizontalLayout {
+        y: 50px;
+        height: 92px;
+        padding-left: 16px;
+        padding-right: 16px;
+        alignment: space-between;
+
+        ChorusKnob {
+            label: "RATE";
+            value <=> root.rate;
+            value-text: root.rate-text;
+            begin-edit => { root.begin-edit(0); }
+            edit(v) => { root.edit(0, v); }
+            end-edit => { root.end-edit(0); }
+            reset => { root.reset(0); }
+        }
+        ChorusKnob {
+            label: "DEPTH";
+            value <=> root.depth;
+            value-text: root.depth-text;
+            begin-edit => { root.begin-edit(1); }
+            edit(v) => { root.edit(1, v); }
+            end-edit => { root.end-edit(1); }
+            reset => { root.reset(1); }
+        }
+        ChorusKnob {
+            label: "DELAY";
+            value <=> root.delay;
+            value-text: root.delay-text;
+            begin-edit => { root.begin-edit(2); }
+            edit(v) => { root.edit(2, v); }
+            end-edit => { root.end-edit(2); }
+            reset => { root.reset(2); }
+        }
+        ChorusKnob {
+            label: "MIX";
+            value <=> root.mix;
+            value-text: root.mix-text;
+            begin-edit => { root.begin-edit(3); }
+            edit(v) => { root.edit(3, v); }
+            end-edit => { root.end-edit(3); }
+            reset => { root.reset(3); }
+        }
+    }
+}

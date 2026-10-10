@@ -31,11 +31,10 @@ rt-paranoid = ["truce/rt-paranoid"]
 
 [dependencies]
 truce = { version = "6.3" }
-# Lightweight types for layout / theme / widget descriptions.
-truce-gui-types = { version = "6.3" }
-# Built-in renderer. Plugins that supply their own editor (egui /
-# iced / slint) can drop this dep.
-truce-gui = { version = "6.3" }
+# Slint editor backend. `slint` must match the exact version truce-slint
+# pins: the code generated from `ui/main.slint` refers to the `slint` crate.
+truce-slint = { version = "6.3" }
+slint = { version = "=1.15.1", default-features = false, features = ["compat-1-2", "renderer-software", "std"] }
 truce-clap = { version = "6.3", optional = true }
 truce-vst3 = { version = "6.3", optional = true }
 truce-au = { version = "6.3", optional = true }
@@ -53,3 +52,7 @@ inherits = "release"
 
 [dev-dependencies]
 truce-test = "6.3"
+
+[build-dependencies]
+# Compiles `ui/main.slint` and bundles truce's widget library + JetBrains Mono.
+truce-slint-build = "6.3"
