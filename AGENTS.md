@@ -327,9 +327,12 @@ Status: **done (v1)**, written by the agent at the user's request. Renders headl
   Rejected: egui (tool-like look), iced (steeper), web/React (not built into truce; WKWebView inside Logic's
   out-of-process AU host is untested risk; per-instance browser cost).
 - **Look**: minimal and modern, Catppuccin Mocha (https://catppuccin.com/palette) with **peach** (`#fab387`) accents;
-  colours live in the `Mocha` global in `ui/main.slint`. Font: bundled JetBrains Mono. Fixed size **360 x 156**
-  (`EDITOR_SIZE`, `.resizable(false)`; AU v2 editors can't be resized by the host).
-- **Own knob** (`ChorusKnob`), not truce's `Knob`: 270° arc, peach value arc, dot indicator; drag vertically
+  colours live in the `Mocha` global in `ui/main.slint`. Font: **Inter Bold**, bundled in `ui/fonts/` (SIL OFL,
+  license file next to it; Slint's software renderer can't rely on system fonts). Header: "CrazyChorus" in peach,
+  20px, no vendor name. Fixed size **440 x 190** (`EDITOR_SIZE`, `.resizable(false)`; AU v2 editors can't be resized
+  by the host).
+- **Own knob** (`ChorusKnob`), not truce's `Knob`: flat design, 270° arc, peach value arc, flat disc with a pointer
+  line; drag vertically
   (Shift = fine), scroll to nudge, double-click resets to the param default.
 - **Edit gestures**: callbacks `begin-edit` / `edit` / `end-edit` / `reset` with a knob index; Rust maps the index via
   `KNOBS` (order must match the `.slint` file) to `begin_edit` on press, `set_param` while dragging, `end_edit` on

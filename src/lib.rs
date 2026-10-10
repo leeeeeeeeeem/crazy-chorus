@@ -160,7 +160,7 @@ impl PluginLogic for CrazyChorus {
 }
 
 /// Editor size in logical points; matches `ChorusUi`'s width/height.
-const EDITOR_SIZE: (u32, u32) = (360, 156);
+const EDITOR_SIZE: (u32, u32) = (440, 190);
 
 /// Knob index used by the Slint callbacks -> param. Order must match
 /// `ChorusUi` in `ui/main.slint`.
