@@ -29,7 +29,7 @@ stereo width. Fractional delay reads use 4-point cubic Hermite interpolation.
 
 ## Codebase
 
-- `src/dsp/`: the DSP, plain Rust with no framework types, so it can be unit tested on its own.
+- `dsp/src/`: the DSP (crate `crazy-chorus-dsp`), plain Rust with no framework types, so it can be unit tested on its own.
   - `delay_line.rs`: power-of-two ring buffer with integer and fractional (Hermite) reads.
   - `lfo.rs`: sine LFO with the phase kept in cycles.
   - `chorus.rs`: two delay lines and two LFOs, plus parameter handling and the dry/wet mix.
@@ -59,5 +59,5 @@ Requires Rust 1.92+ and macOS for the AU build.
 cargo install cargo-truce
 cargo truce install --au2   # or --vst3, --clap
 cargo truce run             # standalone, no DAW needed
-cargo test
+cargo test --workspace
 ```

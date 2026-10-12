@@ -90,7 +90,7 @@ If the user explicitly asks for code ("write the tests for me", "implement X"), 
 - `cargo truce reset-au` flush AU caches and restart pkd if a host shows stale or broken plugins
 - `cargo truce log-stream-au` stream AU v3 logs (v3 runs out-of-process; NSLog does not reach the DAW log)
 - All `cargo truce` commands build **release** by default; pass `--debug` for fast iteration.
-- Tests: `cargo test`, `cargo clippy`. Audio regression tests use `truce_test::PluginDriver` (in-process, no DAW).
+- Tests: `cargo test --workspace` (plain `cargo test` skips the `dsp` crate), `cargo clippy`. Audio regression tests use `truce_test::PluginDriver` (in-process, no DAW).
 - Hot reload (`cargo truce build --shell`) is experimental; dev loop only.
 
 ## AU specifics (Logic)
@@ -127,7 +127,7 @@ Default plan: develop on **AU v2** (simplest, no Developer ID needed). Revisit v
 - `PluginLogic` trait covers both DSP and (later) the GUI via `editor()`. `#[derive(Params)]` + `#[param(...)]` declares params; `truce::plugin!` generates all format exports.
 - Chorus needs per-channel delay-line state, so use the stateful `PluginLogic` (with `DspState`), not `PurePluginLogic`. (verify exact trait shape in https://rustdoc.truce.audio)
 - Keep DSP in its own module with no truce types in its public API (pure `struct Chorus { ... }` with `process(&mut self, l, r)`), so it is unit-testable without the framework.
-- DSP code lives under `src/dsp/`. Building blocks (e.g. `DelayLine`) are separate files with their own unit tests.
+- DSP code lives in its own crate under `dsp/src/` (`crazy-chorus-dsp`, no dependencies). Building blocks (e.g. `DelayLine`) are separate files with their own unit tests.
 - truce API moves fast. Before assuming a signature, check https://truce.audio/docs/migrations/ and the changelog, and keep `Cargo.lock` committed.
 
 ## Real-time rules (audio thread)
@@ -156,7 +156,7 @@ Reference implementation to read first: the chorus in https://github.com/truce-a
 
 ### Future DSP work (ideas, not started)
 
-Suggested order: width → feedback → high-pass → multiple voices. Each new building block goes in `src/dsp/` with its
+Suggested order: width → feedback → high-pass → multiple voices. Each new building block goes in `dsp/src/` with its
 own tests, like the delay line and LFO.
 
 - **Width** (stereo LFO offset, 0-180°): replaces the fixed 90° `STEREO_OFFSET`. Changing it with `set_phase`
@@ -176,7 +176,7 @@ own tests, like the delay line and LFO.
   normalisation as voices are added, CPU cost. The lush "ensemble" sound.
 - **Vintage / BBD character**: band-limiting, mild saturation, noise. Open-ended.
 
-### Delay line (`src/dsp/delay_line.rs`), decisions made
+### Delay line (`dsp/src/delay_line.rs`), decisions made
 
 Status: **done**. `new` / `write` / `read` / `read_frac` / `reset` implemented and tested.
 
@@ -203,7 +203,7 @@ Status: **done**. `new` / `write` / `read` / `read_frac` / `reset` implemented a
   readable (including `max + 1` / `max + 2` headroom, for sizes around power-of-two boundaries). `read_frac`: DC input
   stays constant, integer delays match `read`, ramp interpolates exactly across wraparound, out-of-range clamps.
 
-### LFO (`src/dsp/lfo.rs`), decisions made
+### LFO (`dsp/src/lfo.rs`), decisions made
 
 Status: **done**. `new` / `set_rate` / `set_sample_rate` / `set_phase` / `next` / `reset` implemented and tested.
 
@@ -236,9 +236,9 @@ Status: **done**. `new` / `set_rate` / `set_sample_rate` / `set_phase` / `next` 
   phase 1.0 behaves like 0.0, output and phase stay in range, period matches the rate (0.5% tolerance), rate 0 is
   constant. `reset`: phase back to 0, rate kept.
 
-### Chorus (`src/dsp/chorus.rs`), decisions made
+### Chorus (`dsp/src/chorus.rs`), decisions made
 
-Status: **done** (DSP side). `new` / `set_sample_rate` / `set_rate` / `set_delay_ms` / `set_depth_ms` / `set_mix` /
+Status: **done** (DSP side). `new` / `set_sample_rate` / `set_rate` / `set_delay_ms` / `set_depth_ms` / `set_mix` / `set_lfo_phase` /
 `reset` / per-sample `process(left, right) -> (left, right)` implemented and tested (debug and `--release`).
 Wired into `lib.rs` (see "Plugin integration" below).
 
@@ -281,7 +281,7 @@ Wired into `lib.rs` (see "Plugin integration" below).
   (`to_bits`, incl. `-0.0`), mix 0 keeps state running, pure wet with depth 0 is a plain delay (44.1/48/96 kHz),
   mix 0.5 averages, stereo offset makes channels differ, depth changes the output, jumping/out-of-range params stay
   finite and within ±1.5 (Hermite overshoot), `reset` silences the tail, NaN params keep output finite (release).
-- Range consts (`MIN_DELAY_MS`, `MAX_DELAY_MS`, `MAX_DEPTH_MS`) are `pub(crate)` so `lib.rs` can use them.
+- Range consts (`MIN_DELAY_MS`, `MAX_DELAY_MS`, `MAX_DEPTH_MS`) are `pub` so `lib.rs` can use them.
 - Open for later: when `width` becomes a param, changing the offset with `set_phase` mid-playback makes the right LFO
   jump. Consider one shared phase with the offset added at read time, or smoothing the offset.
 
