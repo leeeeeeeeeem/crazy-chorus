@@ -932,6 +932,7 @@ name = "crazy-chorus"
 version = "0.1.0"
 dependencies = [
  "clap-sys",
+ "crazy-chorus-dsp",
  "slint",
  "truce",
  "truce-au",
@@ -942,6 +943,10 @@ dependencies = [
  "truce-test",
  "truce-vst3",
 ]
+
+[[package]]
+name = "crazy-chorus-dsp"
+version = "0.1.0"
 
 [[package]]
 name = "crc32fast"

@@ -1,4 +1,4 @@
-mod dsp;
+use crazy_chorus_dsp as dsp;
 
 use dsp::chorus::{Chorus, MAX_DELAY_MS, MAX_DEPTH_MS};
 use truce::prelude::*;
