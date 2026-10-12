@@ -91,6 +91,12 @@ impl Chorus {
         self.mix = mix.max(0.).min(1.)
     }
 
+    /// Sets the left LFO phase in cycles; the right stays STEREO_OFFSET ahead.
+    pub fn set_lfo_phase(&mut self, phase: f32) {
+        self.lfo_l.set_phase(phase);
+        self.lfo_r.set_phase(phase + STEREO_OFFSET);
+    }
+
     pub fn reset(&mut self) {
         self.delay_l.reset();
         self.delay_r.reset();
@@ -156,6 +162,15 @@ mod tests {
         // sin(2π · 0) = 0 on the left, sin(2π · 0.25) = 1 on the right.
         assert_within(chorus.lfo_l.next(), 0.0, 1e-6, "left starts at phase 0");
         assert_within(chorus.lfo_r.next(), 1.0, 1e-6, "right starts 90° ahead");
+    }
+
+    #[test]
+    fn set_lfo_phase_keeps_stereo_offset() {
+        let mut chorus = Chorus::new(48000.0);
+        chorus.set_lfo_phase(0.25);
+        // sin(2π · 0.25) = 1 on the left, sin(2π · 0.5) = 0 on the right.
+        assert_within(chorus.lfo_l.next(), 1.0, 1e-6, "left at phase 0.25");
+        assert_within(chorus.lfo_r.next(), 0.0, 1e-6, "right stays 90° ahead");
     }
 
     #[test]
